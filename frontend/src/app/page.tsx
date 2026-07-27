@@ -336,6 +336,9 @@ export default function ChatDashboardPage() {
               <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
               LangGraph Connected
             </span>
+            <span className="hidden sm:flex items-center space-x-1 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-0.5 text-xs font-medium text-indigo-300">
+              ⚡ CI/CD Verified
+            </span>
           </div>
         </header>
 
