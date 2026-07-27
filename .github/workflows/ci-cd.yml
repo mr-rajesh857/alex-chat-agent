@@ -84,23 +84,28 @@ jobs:
       - name: Deploy Frontend to Vercel
         env:
           RAW_VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          RAW_VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           RAW_VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
           # Sanitize secret inputs by trimming newlines/whitespace
           CLEAN_TOKEN=$(echo "$RAW_VERCEL_TOKEN" | tr -d '\r\n ' )
+          CLEAN_ORG=$(echo "$RAW_VERCEL_ORG_ID" | tr -d '\r\n ' )
           CLEAN_PROJECT=$(echo "$RAW_VERCEL_PROJECT_ID" | tr -d '\r\n ' )
 
           if [ -z "$CLEAN_TOKEN" ]; then
             echo "===================================================================================================="
             echo "⚠️ Vercel deployment step skipped because VERCEL_TOKEN secret is not set in GitHub Secrets."
-            echo "To enable automatic deployment, add VERCEL_TOKEN and VERCEL_PROJECT_ID to:"
+            echo "To enable automatic deployment, add VERCEL_TOKEN, VERCEL_ORG_ID, and VERCEL_PROJECT_ID to:"
             echo "GitHub Repo -> Settings -> Secrets and variables -> Actions"
             echo "===================================================================================================="
           else
+            export VERCEL_ORG_ID="$CLEAN_ORG"
+            export VERCEL_PROJECT_ID="$CLEAN_PROJECT"
+
             cd frontend
             rm -rf .vercel
             mkdir -p .vercel
-            printf '{"projectId":"%s"}\n' "$CLEAN_PROJECT" > .vercel/project.json
+            printf '{"orgId":"%s","projectId":"%s"}\n' "$CLEAN_ORG" "$CLEAN_PROJECT" > .vercel/project.json
 
             vercel deploy --prod --token=$CLEAN_TOKEN --yes
           fi
