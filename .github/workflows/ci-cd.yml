@@ -87,13 +87,10 @@ jobs:
           RAW_VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           RAW_VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
-          # Sanitize inputs by trimming trailing newlines/whitespace
+          # Sanitize secret inputs by trimming newlines/whitespace
           CLEAN_TOKEN=$(echo "$RAW_VERCEL_TOKEN" | tr -d '\r\n ' )
           CLEAN_ORG=$(echo "$RAW_VERCEL_ORG_ID" | tr -d '\r\n ' )
           CLEAN_PROJECT=$(echo "$RAW_VERCEL_PROJECT_ID" | tr -d '\r\n ' )
-
-          export VERCEL_ORG_ID="$CLEAN_ORG"
-          export VERCEL_PROJECT_ID="$CLEAN_PROJECT"
 
           if [ -z "$CLEAN_TOKEN" ]; then
             echo "===================================================================================================="
@@ -102,5 +99,12 @@ jobs:
             echo "GitHub Repo -> Settings -> Secrets and variables -> Actions"
             echo "===================================================================================================="
           else
-            vercel deploy --prod --token=$CLEAN_TOKEN --yes
+            export VERCEL_ORG_ID="$CLEAN_ORG"
+            export VERCEL_PROJECT_ID="$CLEAN_PROJECT"
+
+            rm -rf .vercel frontend/.vercel
+            cd frontend
+            vercel pull --yes --environment=production --token=$CLEAN_TOKEN
+            vercel build --prod --token=$CLEAN_TOKEN
+            vercel deploy --prebuilt --prod --token=$CLEAN_TOKEN
           fi
