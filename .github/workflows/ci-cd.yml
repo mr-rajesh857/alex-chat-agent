@@ -99,14 +99,9 @@ jobs:
             echo "GitHub Repo -> Settings -> Secrets and variables -> Actions"
             echo "===================================================================================================="
           else
-            # Create pre-linked project.json to bypass CLI prompt heuristic failures
+            # Create valid JSON project.json file without indentation artifacts
             mkdir -p frontend/.vercel
-            cat <<EOF > frontend/.vercel/project.json
-          {
-            "orgId": "$CLEAN_ORG",
-            "projectId": "$CLEAN_PROJECT"
-          }
-          EOF
+            printf '{"orgId":"%s","projectId":"%s"}\n' "$CLEAN_ORG" "$CLEAN_PROJECT" > frontend/.vercel/project.json
 
             cd frontend
             vercel deploy --prod --token=$CLEAN_TOKEN --yes
