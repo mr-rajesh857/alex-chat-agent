@@ -1,48 +1,168 @@
-# 💬 Alex — Chat-Driven AI Assistant Agent
+# 💬 Alex — Enterprise Chat-Driven AI Assistant Agent Platform
 
-A production-grade, chat-driven AI assistant powered by **LangGraph**, **LangChain**, **FastAPI**, **Next.js 15**, **FastMCP tool servers**, and **PostgreSQL (pgvector)**.
+[![CI/CD Pipeline](https://github.com/mr-rajesh857/alex-voice-agent/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/mr-rajesh857/alex-voice-agent/actions/workflows/ci-cd.yml)
+[![Next.js](https://img.shields.io/badge/Next.js-16%20App%20Router-black?logo=next.js)](https://nextjs.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688?logo=fastapi)](https://fastapi.tiangolo.com/)
+[![LangGraph](https://img.shields.io/badge/LangGraph-Stateful%20Agent-blue)](https://python.langchain.com/)
+[![PostgreSQL pgvector](https://img.shields.io/badge/PostgreSQL-16%20%2B%20pgvector-336791?logo=postgresql)](https://github.com/pgvector/pgvector)
+[![FastMCP](https://img.shields.io/badge/Protocol-FastMCP-purple)](https://modelcontextprotocol.io/)
 
----
-
-## 🏗️ Tech Stack & Architecture
-
-- **Frontend**: Next.js 15 (App Router, TypeScript, Tailwind CSS, MediaRecorder VAD)
-- **Backend API**: FastAPI, Uvicorn, Async SQLAlchemy 2.0, WebSockets
-- **Agent Orchestrator**: LangGraph (Stateful graph branching, confirmation security gates, memory nodes)
-- **LLM Engine**: Google Gemini API via `langchain-google-genai`
-- **Tool Protocols**: FastMCP (Model Context Protocol) servers for Calendar, Contacts, Reminders, RAG Search, Email, and User Preferences
-- **Database**: PostgreSQL 16 with `pgvector` extension for long-term semantic memory
-- **Database GUI**: Adminer (web-based GUI for DB management at `http://localhost:8080`)
-- **In-Memory Store**: Redis 7 (caching, session state & audio queue management)
+> **Architectural Specification & Production Engineering Guide**  
+> *Authored from an SDE-3 (Senior Staff Software Engineer) perspective for high-availability AI agent systems.*
 
 ---
 
-## 📁 Repository Structure
+## 📋 Executive Overview
+
+**Alex** is a production-grade, enterprise-ready chat-driven AI assistant platform designed to automate productivity workflows, schedule management, document search, and personal/enterprise communications.
+
+Built upon a **stateful agentic graph architecture (LangGraph)**, Alex bridges large language models (Google Gemini) with modular tools through the **Model Context Protocol (FastMCP)**. The system includes **Human-in-the-Loop (HITL) security gates** for high-risk action confirmation, persistent semantic vector memory via **PostgreSQL `pgvector`**, and an automated **GitHub Actions CI/CD pipeline** delivering continuous deployment to **Vercel**.
+
+---
+
+## 🏗️ System Architecture & Data Flow
+
+```mermaid
+flowchart TB
+    subgraph ClientLayer ["Client Layer (Frontend)"]
+        UI["Next.js 16 Web Application\n(TypeScript, Tailwind CSS)"]
+        AuthCtx["AuthContext & JWT Store"]
+    end
+
+    subgraph APIGateway ["API Gateway (FastAPI Backend)"]
+        REST["REST API & WebSockets\n(/api/v1/chat, /api/v1/auth)"]
+        JWTAuth["JWT Security Middleware"]
+    end
+
+    subgraph AgentOrchestrator ["Agentic Orchestration (LangGraph Engine)"]
+        StateGraph["LangGraph Stateful Engine"]
+        GeminiLLM["Google Gemini 1.5 Flash Model"]
+        HITL["Human-In-The-Loop Confirmation Gate"]
+        Checkpointer["Graph Memory & State Checkpointer"]
+    end
+
+    subgraph MCPEcosystem ["FastMCP Tool Server Network"]
+        CalMCP["Calendar MCP Server\n(:8001)"]
+        ContactsMCP["Contacts MCP Server\n(:8002)"]
+        RemindersMCP["Reminders MCP Server\n(:8003)"]
+        RagMCP["Search & RAG MCP Server\n(:8004)"]
+        EmailMCP["Email Messaging MCP Server\n(:8005)"]
+    end
+
+    subgraph PersistenceLayer ["Persistence & Caching Infrastructure"]
+        PG["PostgreSQL 16 DB\n(Users, Chat Sessions, Turns)"]
+        PGVector["pgvector Extension\n(Long-Term Vector Memory)"]
+        Redis["Redis 7 Cache\n(Audio Queues & Session Cache)"]
+    end
+
+    UI -->|HTTPS / WSS + Bearer Token| REST
+    REST --> JWTAuth
+    JWTAuth --> StateGraph
+    StateGraph <--> GeminiLLM
+    StateGraph <--> Checkpointer
+    StateGraph -->|Request Approval| HITL
+    HITL -->|Confirmed Action| MCPEcosystem
+    StateGraph <-->|Query / Embed| PGVector
+    REST <--> PG
+    REST <--> Redis
+    MCPEcosystem <--> PG
+```
+
+---
+
+## ⚙️ Core Subsystem Breakdown
+
+### 1. Frontend Web Application (`/frontend`)
+* **Framework**: Next.js 16 (App Router, Turbopack, TypeScript, Tailwind CSS).
+* **State & Authentication**: Context-driven authentication provider (`AuthContext`) managing JWT lifecycle and persistent session state.
+* **User Interface**: Glassmorphic theme featuring live transcript displays, prompt recommendations, tool status indicators, and confirmation dialogs for pending actions.
+* **API Client**: Modular HTTP/WebSocket client ([frontend/src/lib/api.ts](file:///home/rajeshkumarpanda/Documents/Alex/frontend/src/lib/api.ts)) with automatic Bearer token injection.
+
+### 2. FastAPI Gateway & Security (`/backend/app`)
+* **API Engine**: Async FastAPI 0.110+ running under Uvicorn with Pydantic v2 data validation schemas.
+* **Security & Auth**: OAuth2 password flow with JWT signature verification (`python-jose`) and bcrypt password hashing (`passlib`).
+* **Database Access**: Async SQLAlchemy 2.0 ORM sessions connected to PostgreSQL via `asyncpg`.
+
+### 3. Agentic Orchestrator & LangGraph Engine (`/backend/app/graph`)
+* **Stateful Graph**: LangGraph state machine handling turn routing, intent recognition, memory retrieval, and tool execution.
+* **Human-in-the-Loop (HITL)**: Action security gates intercept sensitive tool invocations (e.g., meeting cancellations, email dispatches), requiring explicit user confirmation before execution.
+* **Checkpointer**: State snapshotting allowing seamless turn resumption across HTTP requests.
+
+### 4. FastMCP Tool Microservices (`/mcp-servers`)
+Independent Model Context Protocol (MCP) microservices offering standardized tool interfaces:
+* 📅 `calendar-mcp`: Meeting scheduling, availability checking, and agenda queries.
+* 👤 `contacts-mcp`: Contact lookup and directory management.
+* ⏰ `reminders-mcp`: Task reminder creation and listing.
+* 🔍 `search-rag-mcp`: Semantic vector document search over personal notes/knowledge.
+* ✉️ `email-messaging-mcp`: Email composition and inbox dispatch.
+
+### 5. Vector Memory & Storage (`/infra/postgres`)
+* **Database**: PostgreSQL 16 initialized with the `pgvector` extension ([infra/postgres/init.sql](file:///home/rajeshkumarpanda/Documents/Alex/infra/postgres/init.sql)).
+* **Semantic Embeddings**: `langchain-google-genai` vector embeddings stored in HNSW / IVFFlat indexes for real-time similarity search.
+
+---
+
+## 🚀 CI/CD Pipeline & Automated Deployment
+
+The project implements a zero-downtime, fully automated CI/CD pipeline using **GitHub Actions** ([.github/workflows/ci-cd.yml](file:///home/rajeshkumarpanda/Documents/Alex/.github/workflows/ci-cd.yml)):
+
+```
+Push to master ──► [Backend CI: Pytest & Health Check] ──┐
+                 ──► [Frontend CI: ESLint & Next.js Build]  ──┼──► [Deploy to Vercel Stage (CD)]
+```
+
+### Continuous Integration (CI)
+1. **Backend CI**:
+   - Sets up Python 3.11 environment.
+   - Installs backend requirements (`backend/requirements.txt`).
+   - Executes unit & integration tests (`pytest backend/tests`) with automated database lifespan mocking ([backend/tests/conftest.py](file:///home/rajeshkumarpanda/Documents/Alex/backend/tests/conftest.py)).
+
+2. **Frontend CI**:
+   - Sets up Node.js 24 environment.
+   - Installs frontend packages (`npm install --legacy-peer-deps`).
+   - Performs code quality linting (`npm run lint`).
+   - Validates Next.js production build (`npm run build`).
+
+### Continuous Deployment (CD)
+* **Vercel Stage**: Automatically triggers production deployment of `/frontend` to **Vercel** upon successful completion of CI jobs when secret keys (`VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`) are configured.
+
+---
+
+## 📁 Repository Directory Layout
 
 ```
 alex-voice-agent/
-├── backend/                        # FastAPI Gateway & LangGraph Orchestrator
+├── .github/
+│   └── workflows/
+│       └── ci-cd.yml                 # GitHub Actions CI/CD Pipeline Definition
+│
+├── backend/                          # FastAPI Backend Gateway & LangGraph Agent
 │   ├── app/
-│   │   ├── audio/                  # STT/TTS streaming & VAD processors
-│   │   ├── core/                   # Security, JWT auth, config loader
-│   │   ├── db/                     # Async SQLAlchemy models & session
-│   │   ├── graph/                  # LangGraph nodes, state, edges, checkpointer
-│   │   ├── llm/                    # Gemini client wrappers & prompts
-│   │   ├── memory/                 # Vector memory retriever (pgvector)
-│   │   ├── mcp_client/             # FastMCP tool callers
-│   │   └── routers/                # REST & WebSocket endpoints
-│   ├── requirements.txt
-│   └── .env
+│   │   ├── core/                     # JWT security, password hashing, environment config
+│   │   ├── db/                       # Async SQLAlchemy models and session provider
+│   │   ├── graph/                    # LangGraph nodes, state schema, HITL security gates
+│   │   ├── llm/                      # Gemini LLM client wrappers & system prompts
+│   │   ├── memory/                   # pgvector vector store retriever
+│   │   ├── mcp_client/               # FastMCP tool client callers
+│   │   ├── routers/                  # REST API endpoints (/auth, /chat)
+│   │   └── main.py                   # FastAPI Application Entrypoint & Lifespan
+│   ├── tests/
+│   │   ├── conftest.py               # Global Pytest fixtures & database mocks
+│   │   └── test_health.py            # API Health Check Endpoint Unit Tests
+│   ├── requirements.txt              # Backend Dependencies
+│   └── .env.example                  # Backend Environment Template
 │
-├── frontend/                       # Next.js 14 Frontend App
+├── frontend/                         # Next.js 16 Web Application
 │   ├── src/
-│   │   ├── app/                    # App Router (/login, /register, dashboard /)
-│   │   ├── components/             # Audio Waveform, Live Transcript, Chat UI
-│   │   ├── context/                # AuthContext provider
-│   │   └── lib/                    # API client with JWT bearer injection
-│   └── package.json
+│   │   ├── app/                      # App Router (/login, /register, / dashboard)
+│   │   ├── components/               # Chat UI, status badges, prompt cards
+│   │   ├── context/                  # AuthContext Provider
+│   │   └── lib/                      # Centralized API HTTP Client (api.ts)
+│   ├── next.config.ts                # Next.js 16 Turbopack Configuration
+│   ├── package.json                  # Frontend Scripts & Dependencies
+│   └── vercel.json                   # Vercel Deployment Specification
 │
-├── mcp-servers/                    # FastMCP Tool Servers
+├── mcp-servers/                      # FastMCP Microservice Tools
 │   ├── calendar-mcp/
 │   ├── contacts-mcp/
 │   ├── reminders-mcp/
@@ -50,115 +170,120 @@ alex-voice-agent/
 │   ├── email-messaging-mcp/
 │   └── user-prefs-mcp/
 │
-├── infra/                          # PostgreSQL Init SQL & pgvector setup
-│   └── postgres/init.sql
+├── infra/                            # Infrastructure Provisioning
+│   └── postgres/init.sql             # PostgreSQL schema & pgvector extension init
 │
-├── docker-compose.yml              # Docker Compose setup
-├── .env.example                    # Environment template
-└── alex-chat-agent-project-plan.md     # Comprehensive Architectural Specification
+├── docker-compose.yml                # Containerized Database & Redis Services
+├── .gitignore                        # Global Git Ignore Rules
+└── README.md                         # Production Engineering Specification
 ```
 
 ---
 
-## ⚡ Quick Start Guide (How to Run)
+## ⚡ Quick Start Guide (Local Execution)
 
-### Prerequisites
-- [Docker](https://www.docker.com/) and Docker Compose installed
-- Python 3.10+
-- Node.js 18+ and npm
+### System Prerequisites
+* **Docker** & Docker Compose (v2.0+)
+* **Python** 3.11+
+* **Node.js** 20+ & npm
 
 ---
 
-### Step 1: Environment Setup
-
-Copy `.env.example` to `.env` in both the root directory and `backend/`:
+### Step 1: Clone Repository & Setup Environment
 
 ```bash
-# In Root directory
-cp .env.example .env
+git clone git@github.com:mr-rajesh857/alex-voice-agent.git
+cd alex-voice-agent
 
-# In Backend directory
+# Create environment configuration
+cp .env.example .env
 cp backend/.env.example backend/.env
 ```
 
+Set your Google Gemini API key in `backend/.env`:
+```env
+GEMINI_API_KEY=your_actual_gemini_api_key_here
+JWT_SECRET=your_32_byte_secure_random_jwt_secret
+ENCRYPTION_KEY=your_32_byte_secure_encryption_key
+```
+
 ---
 
-### Step 2: Start Infrastructure Services (PostgreSQL, Adminer, Redis via Docker)
-
-In the root directory, start the database, Adminer GUI, and Redis containers:
+### Step 2: Launch Infrastructure (PostgreSQL + pgvector & Redis)
 
 ```bash
 docker compose up -d
 ```
-
-- **PostgreSQL Database**: Port `5433` (`postgresql+asyncpg://alex_user:alex_password@localhost:5433/alex_db`)
-- **Adminer DB GUI**: Open [http://localhost:8080](http://localhost:8080)
-- **Redis Cache**: Port `6379` (`redis://localhost:6379/0`)
+* **PostgreSQL Database**: `localhost:5433`
+* **Adminer Web GUI**: [http://localhost:8080](http://localhost:8080)
+* **Redis Cache**: `localhost:6379`
 
 ---
 
-### Step 3: Start the Backend API (FastAPI)
-
-In a new terminal window:
+### Step 3: Run Backend API Server
 
 ```bash
 cd backend
-
-# 1. Activate Python virtual environment
 source ../.venv/bin/activate
-
-# 2. Install backend dependencies (if not installed)
 pip install -r requirements.txt
-
-# 3. Start FastAPI server
 uvicorn app.main:app --reload --port 8000
 ```
-
-- **Backend API**: `http://localhost:8000`
-- **Swagger Documentation**: [http://localhost:8000/api/v1/docs](http://localhost:8000/api/v1/docs)
+* **API Server**: [http://localhost:8000](http://localhost:8000)
+* **Interactive OpenAPI Specs (Swagger)**: [http://localhost:8000/api/v1/docs](http://localhost:8000/api/v1/docs)
 
 ---
 
-### Step 4: Start the Frontend App (Next.js)
+### Step 4: Run Frontend Development Server
 
-In another terminal window:
-
+In a new terminal window:
 ```bash
 cd frontend
-
-# 1. Install frontend dependencies (if not installed)
-npm install
-
-# 2. Start Next.js development server
+npm install --legacy-peer-deps
 npm run dev
 ```
-
-- **Frontend Application**: Open [http://localhost:3000](http://localhost:3000) in your browser.
-
----
-
-## 🔑 Authentication Workflow
-
-1. Open `http://localhost:3000` (Redirects to `/login`).
-2. Click **"Create account"** to register a new user at `/register`.
-3. Upon registration/login, a secure **JWT access token** is issued and stored in `localStorage`.
-4. All frontend API calls automatically attach `Authorization: Bearer <token>`.
+* **Frontend Application**: [http://localhost:3000](http://localhost:3000)
 
 ---
 
-## 📜 Available NPM & Python Scripts
+## 🧪 Verification & Automated Testing
 
-| Context | Command | Description |
-| :--- | :--- | :--- |
-| **Root** | `docker compose up -d postgres` | Starts PostgreSQL container with `pgvector` |
-| **Backend** | `uvicorn app.main:app --reload --port 8000` | Starts FastAPI backend server |
-| **Backend** | `pytest` | Runs backend test suite |
-| **Frontend** | `npm run dev` | Runs Next.js frontend dev server |
-| **Frontend** | `npm run build` | Builds frontend for production |
+Execute the test suites locally to verify application integrity:
+
+```bash
+# 1. Run Backend Pytest Suite
+PYTHONPATH=backend pytest backend/tests
+
+# 2. Run Frontend ESLint Code Analysis
+cd frontend && npm run lint
+
+# 3. Test Next.js Production Build
+cd frontend && npm run build
+```
 
 ---
 
-## 🔒 Security Configuration
+## 🌐 Production Vercel Deployment Setup
 
-- **`JWT_SECRET`**: Key used for signing/verifying JWT authentication tokens.
-- **`ENCRYPTION_KEY`**: Key used for database-level encryption of third-party OAuth tokens.
+To enable automated CD deployment to Vercel via GitHub Actions:
+
+1. Obtain your **Vercel Access Token** from [vercel.com/account/tokens](https://vercel.com/account/tokens).
+2. Obtain your **Project ID** and **Org ID** from Vercel Project Settings.
+3. Configure the following Repository Secrets in GitHub (**Settings ➔ Secrets and variables ➔ Actions**):
+   * `VERCEL_TOKEN`
+   * `VERCEL_ORG_ID`
+   * `VERCEL_PROJECT_ID`
+
+Once configured, pushing any commit to `master` will automatically build, test, and deploy your frontend application to Vercel.
+
+---
+
+## 🛡️ Security & Enterprise Compliance
+
+* **JWT Token Security**: Access tokens signed using HS256 algorithm with configurable expiration windows.
+* **Token Encryption**: Third-party tokens and credentials encrypted at rest in PostgreSQL.
+* **Input Sanitization**: Pydantic models validate all incoming REST and WebSocket JSON payloads.
+* **Human-in-the-Loop Gates**: High-impact agent tools require explicit confirmation before execution, preventing unintended autonomous actions.
+
+---
+
+
