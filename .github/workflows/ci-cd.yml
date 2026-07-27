@@ -102,5 +102,5 @@ jobs:
             echo "GitHub Repo -> Settings -> Secrets and variables -> Actions"
             echo "===================================================================================================="
           else
-            vercel deploy --prod --token=$CLEAN_TOKEN --cwd=./frontend --yes
+            vercel deploy --prod --token=$CLEAN_TOKEN --yes
           fi
