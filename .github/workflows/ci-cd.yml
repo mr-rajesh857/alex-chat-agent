@@ -99,11 +99,15 @@ jobs:
             echo "GitHub Repo -> Settings -> Secrets and variables -> Actions"
             echo "===================================================================================================="
           else
-            export VERCEL_ORG_ID="$CLEAN_ORG"
-            export VERCEL_PROJECT_ID="$CLEAN_PROJECT"
+            # Create pre-linked project.json to bypass CLI prompt heuristic failures
+            mkdir -p frontend/.vercel
+            cat <<EOF > frontend/.vercel/project.json
+          {
+            "orgId": "$CLEAN_ORG",
+            "projectId": "$CLEAN_PROJECT"
+          }
+          EOF
 
-            rm -rf .vercel frontend/.vercel
             cd frontend
-            vercel link --yes --token=$CLEAN_TOKEN
             vercel deploy --prod --token=$CLEAN_TOKEN --yes
           fi
