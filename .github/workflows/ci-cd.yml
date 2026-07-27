@@ -104,5 +104,6 @@ jobs:
 
             rm -rf .vercel frontend/.vercel
             cd frontend
-            vercel deploy --prod --token=$CLEAN_TOKEN --scope=$CLEAN_ORG --yes
+            vercel link --yes --token=$CLEAN_TOKEN
+            vercel deploy --prod --token=$CLEAN_TOKEN --yes
           fi
