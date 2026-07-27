@@ -99,14 +99,19 @@ jobs:
             echo "GitHub Repo -> Settings -> Secrets and variables -> Actions"
             echo "===================================================================================================="
           else
-            export VERCEL_ORG_ID="$CLEAN_ORG"
+            mkdir -p .vercel frontend/.vercel
+
+            if [ -n "$CLEAN_ORG" ]; then
+              export VERCEL_ORG_ID="$CLEAN_ORG"
+              printf '{"projectId":"%s","orgId":"%s"}\n' "$CLEAN_PROJECT" "$CLEAN_ORG" > .vercel/project.json
+              printf '{"projectId":"%s","orgId":"%s"}\n' "$CLEAN_PROJECT" "$CLEAN_ORG" > frontend/.vercel/project.json
+            else
+              printf '{"projectId":"%s"}\n' "$CLEAN_PROJECT" > .vercel/project.json
+              printf '{"projectId":"%s"}\n' "$CLEAN_PROJECT" > frontend/.vercel/project.json
+            fi
+
             export VERCEL_PROJECT_ID="$CLEAN_PROJECT"
 
-            # Create project.json in both root and frontend folders
-            mkdir -p .vercel frontend/.vercel
-            printf '{"orgId":"%s","projectId":"%s"}\n' "$CLEAN_ORG" "$CLEAN_PROJECT" > .vercel/project.json
-            printf '{"orgId":"%s","projectId":"%s"}\n' "$CLEAN_ORG" "$CLEAN_PROJECT" > frontend/.vercel/project.json
-
             cd frontend
-            vercel deploy --prod --token=$CLEAN_TOKEN --yes
+            vercel deploy --prod --token=$CLEAN_TOKEN --yes || vercel deploy --prod --token=$CLEAN_TOKEN --name=alex-voice-agent --yes
           fi
