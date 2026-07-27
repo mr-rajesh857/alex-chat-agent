@@ -39,6 +39,7 @@ next-env.d.ts
 .env*.local
 .env.development
 .env.production
+.google_tokens.json
 !.env.example
 
 
