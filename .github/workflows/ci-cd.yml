@@ -99,8 +99,12 @@ jobs:
             echo "GitHub Repo -> Settings -> Secrets and variables -> Actions"
             echo "===================================================================================================="
           else
-            # Create valid JSON project.json file without indentation artifacts
-            mkdir -p frontend/.vercel
+            export VERCEL_ORG_ID="$CLEAN_ORG"
+            export VERCEL_PROJECT_ID="$CLEAN_PROJECT"
+
+            # Create project.json in both root and frontend folders
+            mkdir -p .vercel frontend/.vercel
+            printf '{"orgId":"%s","projectId":"%s"}\n' "$CLEAN_ORG" "$CLEAN_PROJECT" > .vercel/project.json
             printf '{"orgId":"%s","projectId":"%s"}\n' "$CLEAN_ORG" "$CLEAN_PROJECT" > frontend/.vercel/project.json
 
             cd frontend
