@@ -30,11 +30,12 @@ jobs:
 
       - name: Execute Backend Tests
         env:
+          PYTHONPATH: backend
           JWT_SECRET: "ci_test_jwt_secret_key_32_bytes_minimum_len!"
           ENCRYPTION_KEY: "ci_test_encryption_key_32_bytes_len!"
           GEMINI_API_KEY: "ci_test_gemini_key"
         run: |
-          PYTHONPATH=backend pytest backend/tests
+          python -m pytest backend/tests
 
   frontend-ci:
     name: Frontend CI (Next.js Lint & Build)
@@ -53,7 +54,7 @@ jobs:
 
       - name: Install Frontend Dependencies
         working-directory: ./frontend
-        run: npm ci
+        run: npm install
 
       - name: Run ESLint
         working-directory: ./frontend
