@@ -14,6 +14,8 @@
 
 ## 📋 Executive Overview
 
+
+
 **Alex** is a production-grade, enterprise-ready chat-driven AI assistant platform designed to automate productivity workflows, schedule management, document search, and personal/enterprise communications.
 
 Built upon a **stateful agentic graph architecture (LangGraph)**, Alex bridges large language models (Google Gemini) with modular tools through the **Model Context Protocol (FastMCP)**. The system includes **Human-in-the-Loop (HITL) security gates** for high-risk action confirmation, persistent semantic vector memory via **PostgreSQL `pgvector`**, and an automated **GitHub Actions CI/CD pipeline** delivering continuous deployment to **Vercel**.
