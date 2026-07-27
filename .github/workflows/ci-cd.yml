@@ -104,7 +104,5 @@ jobs:
 
             rm -rf .vercel frontend/.vercel
             cd frontend
-            vercel pull --yes --environment=production --token=$CLEAN_TOKEN
-            vercel build --prod --token=$CLEAN_TOKEN
-            vercel deploy --prebuilt --prod --token=$CLEAN_TOKEN
+            vercel deploy --prod --token=$CLEAN_TOKEN --scope=$CLEAN_ORG --yes
           fi
