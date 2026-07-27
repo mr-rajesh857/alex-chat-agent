@@ -1,3 +1,5 @@
+import os
+import json
 import httpx
 import base64
 from email.mime.text import MIMEText
@@ -8,22 +10,60 @@ from app.core.config import settings
 ACTIVE_GOOGLE_OAUTH_TOKEN: Optional[str] = None
 ACTIVE_GOOGLE_REFRESH_TOKEN: Optional[str] = None
 
+# Persistent token storage file path
+TOKEN_FILE_PATH = os.path.join(os.path.dirname(__file__), "..", "..", ".google_tokens.json")
 
-def set_google_oauth_token(token: str, refresh_token: Optional[str] = None):
+
+def save_tokens_to_file(token: str, refresh_token: Optional[str] = None):
+    """Saves OAuth tokens to disk so server reloads do not lose authentication."""
     global ACTIVE_GOOGLE_OAUTH_TOKEN, ACTIVE_GOOGLE_REFRESH_TOKEN
     ACTIVE_GOOGLE_OAUTH_TOKEN = token
     if refresh_token:
         ACTIVE_GOOGLE_REFRESH_TOKEN = refresh_token
 
+    data = {
+        "access_token": ACTIVE_GOOGLE_OAUTH_TOKEN,
+        "refresh_token": ACTIVE_GOOGLE_REFRESH_TOKEN,
+        "updated_at": datetime.now(timezone.utc).isoformat()
+    }
+    try:
+        with open(TOKEN_FILE_PATH, "w") as f:
+            json.dump(data, f, indent=2)
+    except Exception:
+        pass
+
+
+def load_tokens_from_file():
+    """Loads saved OAuth tokens from disk on server startup."""
+    global ACTIVE_GOOGLE_OAUTH_TOKEN, ACTIVE_GOOGLE_REFRESH_TOKEN
+    if os.path.exists(TOKEN_FILE_PATH):
+        try:
+            with open(TOKEN_FILE_PATH, "r") as f:
+                data = json.load(f)
+                ACTIVE_GOOGLE_OAUTH_TOKEN = data.get("access_token")
+                if data.get("refresh_token"):
+                    ACTIVE_GOOGLE_REFRESH_TOKEN = data.get("refresh_token")
+        except Exception:
+            pass
+
+
+def set_google_oauth_token(token: str, refresh_token: Optional[str] = None):
+    save_tokens_to_file(token, refresh_token)
+
 
 def get_google_oauth_token() -> Optional[str]:
     global ACTIVE_GOOGLE_OAUTH_TOKEN
+    if not ACTIVE_GOOGLE_OAUTH_TOKEN:
+        load_tokens_from_file()
     return ACTIVE_GOOGLE_OAUTH_TOKEN
 
 
 async def refresh_google_access_token() -> Optional[str]:
-    """Uses refresh token to obtain a fresh access token from Google OAuth endpoint."""
+    """Uses refresh token to obtain a fresh access token silently from Google OAuth endpoint."""
     global ACTIVE_GOOGLE_OAUTH_TOKEN, ACTIVE_GOOGLE_REFRESH_TOKEN
+    if not ACTIVE_GOOGLE_REFRESH_TOKEN:
+        load_tokens_from_file()
+
     if not ACTIVE_GOOGLE_REFRESH_TOKEN:
         return None
 
@@ -42,7 +82,7 @@ async def refresh_google_access_token() -> Optional[str]:
                 data = resp.json()
                 new_access_token = data.get("access_token")
                 if new_access_token:
-                    ACTIVE_GOOGLE_OAUTH_TOKEN = new_access_token
+                    save_tokens_to_file(new_access_token, ACTIVE_GOOGLE_REFRESH_TOKEN)
                     return new_access_token
     except Exception:
         pass
@@ -61,16 +101,19 @@ def create_raw_email(to: str, subject: str, body: str) -> str:
 async def execute_mcp_tool(tool_name: str, tool_args: Dict[str, Any]) -> Dict[str, Any]:
     """
     Universal FastMCP tool execution router supporting real Google Calendar and Gmail API execution.
-    Auto-refreshes Google OAuth access token if expired (401).
+    Auto-refreshes Google OAuth access token from disk or refresh token silently.
     """
     token = get_google_oauth_token()
     
+    # If no token in memory or file, attempt silent refresh using refresh_token
+    if not token and ACTIVE_GOOGLE_REFRESH_TOKEN:
+        token = await refresh_google_access_token()
+
     if not token:
-        # Prompt user to perform Google Login
         login_url = f"https://accounts.google.com/o/oauth2/v2/auth?client_id={settings.GOOGLE_CLIENT_ID}&redirect_uri={settings.GOOGLE_REDIRECT_URI}&response_type=code&scope=https://www.googleapis.com/auth/gmail.compose%20https://www.googleapis.com/auth/calendar&access_type=offline&prompt=consent"
         return {
             "status": "error",
-            "message": f"🔑 Google OAuth session expired or not authenticated. Please [Click Here to Sign in with Google]({login_url}) to authorize Gmail & Calendar access."
+            "message": f"🔑 Google OAuth session not authenticated. Please [Click Here to Sign in with Google]({login_url}) to grant initial access once."
         }
 
     headers = {"Authorization": f"Bearer {token}"}
@@ -93,7 +136,7 @@ async def execute_mcp_tool(tool_name: str, tool_args: Dict[str, Any]) -> Dict[st
                     json={"raw": raw_email}
                 )
                 
-                # If 401 Unauthorized, attempt token refresh once
+                # If 401 Unauthorized, attempt silent token refresh once
                 if resp.status_code == 401:
                     new_token = await refresh_google_access_token()
                     if new_token:

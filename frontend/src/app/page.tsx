@@ -13,7 +13,7 @@ interface ChatMessage {
   confirmation?: {
     toolName: string;
     summary: string;
-    details: Record<string, any>;
+    details: Record<string, unknown>;
     status?: "pending" | "approved" | "rejected";
   };
 }
@@ -32,10 +32,10 @@ interface BackendChatResponse {
   pending_confirmation: boolean;
   confirmation_payload?: {
     tool_name: string;
-    tool_args: Record<string, any>;
+    tool_args: Record<string, unknown>;
     message: string;
   };
-  tool_result?: Record<string, any>;
+  tool_result?: Record<string, unknown>;
 }
 
 export default function ChatDashboardPage() {
@@ -51,18 +51,6 @@ export default function ChatDashboardPage() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!isLoading && !token) {
-      router.push("/login");
-    } else if (token) {
-      fetchUserSessions();
-    }
-  }, [isLoading, token, router]);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isTyping]);
-
   const fetchUserSessions = async () => {
     try {
       const data = await apiRequest<ChatSession[]>("/chat/sessions");
@@ -71,6 +59,29 @@ export default function ChatDashboardPage() {
       console.error("Failed to load sessions:", err);
     }
   };
+
+  useEffect(() => {
+    if (!isLoading && !token) {
+      router.push("/login");
+    } else if (token) {
+      let isMounted = true;
+      (async () => {
+        try {
+          const data = await apiRequest<ChatSession[]>("/chat/sessions");
+          if (isMounted) setSessions(data);
+        } catch (err) {
+          console.error("Failed to load sessions:", err);
+        }
+      })();
+      return () => {
+        isMounted = false;
+      };
+    }
+  }, [isLoading, token, router]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isTyping]);
 
   const loadSessionTurns = async (sid: string) => {
     setSessionId(sid);
@@ -96,7 +107,7 @@ export default function ChatDashboardPage() {
 
     if (query.trim()) {
       const userMsg: ChatMessage = {
-        id: Date.now().toString(),
+        id: crypto.randomUUID(),
         sender: "user",
         text: query,
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
@@ -123,7 +134,7 @@ export default function ChatDashboardPage() {
       }
 
       const assistantMsg: ChatMessage = {
-        id: (Date.now() + 1).toString(),
+        id: crypto.randomUUID(),
         sender: "assistant",
         text: res.response_text,
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
@@ -136,11 +147,12 @@ export default function ChatDashboardPage() {
       };
 
       setMessages((prev) => [...prev, assistantMsg]);
-    } catch (err: any) {
+    } catch (err) {
+      const error = err as Error;
       const errorMsg: ChatMessage = {
-        id: (Date.now() + 1).toString(),
+        id: crypto.randomUUID(),
         sender: "assistant",
-        text: `⚠️ Error: ${err.message || "Failed to process chat message."}`,
+        text: `⚠️ Error: ${error.message || "Failed to process chat message."}`,
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       };
       setMessages((prev) => [...prev, errorMsg]);

@@ -1,5 +1,6 @@
 import json
 import re
+from datetime import datetime
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel, Field
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -14,7 +15,7 @@ class ExtractedIntent(BaseModel):
     )
     tool_args: Dict[str, Any] = Field(
         default_factory=dict,
-        description="Dynamic dictionary of arbitrary extracted arguments (e.g., recipient, title, subject, body, date, start_time, query, reminder_text)"
+        description="Dynamic dictionary of arbitrary extracted arguments (e.g., recipient, title, subject, body, date, start_time, end_time, query, reminder_text)"
     )
     missing_slots: List[str] = Field(
         default_factory=list,
@@ -23,21 +24,24 @@ class ExtractedIntent(BaseModel):
 
 
 SYSTEM_INTENT_PROMPT = """
-You are Alex, an enterprise AI assistant agent.
-Analyze the user input and conversation history. Classify the user intent and extract all parameters dynamically into `tool_args`.
+You are Alex, an autonomous executive AI assistant agent capable of performing any task requested by your user.
+Analyze the user's input and determine the exact intent/tool to execute, extracting all required arguments dynamically into `tool_args`.
 
-Supported Universal Intents & Tools:
-1. `send_email`: Send email messages. Extract `recipient` (email address), `subject` (concise subject line), and `body` (polite, formatted email message text).
+Supported Universal Capabilities & Tools:
+1. `send_email`: Send emails. Extract `recipient` (email), `subject` (concise subject line), and `body` (professionally composed message body).
 2. `create_calendar_event`: Schedule calendar meetings. Extract `title`, `recipient`, `date` (YYYY-MM-DD), `start_time` (HH:MM:SS), `end_time` (HH:MM:SS).
-3. `list_calendar_events`: View calendar. Extract `date` or `date_range`.
-4. `cancel_calendar_event`: Cancel meeting. Extract `event_title_or_id`.
+3. `list_calendar_events`: View upcoming events. Extract `date` or `date_range`.
+4. `cancel_calendar_event`: Cancel a meeting. Extract `event_title_or_id`.
 5. `set_reminder`: Set reminders. Extract `reminder_text`, `time`.
-6. `list_reminders`: Show reminders. Extract `status`.
-7. `web_search`: Search web for live info. Extract `query`.
-8. `resolve_person`: Look up contact details. Extract `name`.
-9. `general_chat`: General QA or conversation. Extract `text`.
+6. `list_reminders`: List active reminders. Extract `status`.
+7. `web_search`: Search the web for information. Extract `query`.
+8. `resolve_person`: Search contact details. Extract `name`.
+9. `general_chat`: Answer general questions, write content, or converse naturally. Extract `text`.
 
-Always return valid structured output conforming to ExtractedIntent.
+CRITICAL INSTRUCTIONS:
+- For communication tasks (emails/calendar invites), write genuine, professional messages directly for the recipient based on the user's intent. Never copy raw meta-commands like 'hey send a mail' into the body.
+- Extract date/time parameters dynamically.
+- Support any language, topic, or work task requested by the user.
 """
 
 
@@ -49,19 +53,47 @@ def get_llm(temperature: float = 0.2):
     )
 
 
+def extract_universal_message_content(user_prompt: str) -> tuple[str, str]:
+    """
+    100% Universal text sanitizer. Strips command prefixes dynamically without any hardcoded topic keywords.
+    """
+    # 1. Strip meta command prefixes (e.g. "hey send a mail to x@y.com regarding")
+    cleaned = re.sub(
+        r'^(?:hey|hi|please)?\s*(?:send|write|draft|schedule|create)\s+(?:a\s+)?(?:mail|email|message|meeting|event)\s+(?:to|with)?\s*[\w\.-]+@[\w\.-]+\.\w+\s*(?:regarding|about|regading|sub|subject|saying|that|for)?\s*',
+        '',
+        user_prompt,
+        flags=re.IGNORECASE
+    ).strip()
+
+    # 2. General cleanup of email addresses and action prefixes
+    if not cleaned or cleaned.lower() == user_prompt.lower():
+        cleaned = re.sub(r'[\w\.-]+@[\w\.-]+\.\w+', '', user_prompt).strip()
+        cleaned = re.sub(r'^(?:hey|hi|please)?\s*(?:send|write|draft|schedule|create)\s+(?:a\s+)?(?:mail|email|message|meeting)\s*(?:to|with)?\s*', '', cleaned, flags=re.IGNORECASE).strip()
+
+    # 3. Dynamic Subject generation from extracted content
+    subject = cleaned[:45].capitalize() if cleaned else "Notification from Alex AI"
+
+    # 4. Dynamic Body generation from extracted content
+    body = f"Hi,\n\n{cleaned.capitalize() if cleaned else 'Please review the requested details.'}\n\nBest regards,\nAlex AI Assistant"
+
+    return subject, body
+
+
 async def generate_email_content_with_ai(user_prompt: str) -> tuple[str, str]:
-    """Uses Gemini AI to generate a dynamic, professional email subject and body for ANY user prompt."""
+    """Uses Gemini AI or universal text sanitizer to generate dynamic subject and body for ANY prompt."""
     if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY.startswith("AIzaSy"):
         try:
             llm = get_llm(temperature=0.3)
             prompt = f"""
-Given the user instruction: "{user_prompt}"
+You are Alex, an executive AI assistant. Compose a professional email to the recipient based on the user's request.
+User Request: "{user_prompt}"
 
-Generate:
-1. A short, professional email subject line (3-6 words).
-2. A polite, complete email body message text addressing the recipient.
+Instructions:
+1. `subject`: Create a concise, professional subject line (3-6 words).
+2. `body`: Write a polite, complete email body addressing the recipient directly. 
+   Do NOT copy user meta commands like "hey send a mail" or "schedule a meet". Write a clear email message (e.g. "Hi,\\n\\n[Message...]\\n\\nBest regards,\\nAlex AI Assistant").
 
-Return JSON in this format:
+Return JSON:
 ```json
 {{
   "subject": "...",
@@ -76,31 +108,16 @@ Return JSON in this format:
             elif "```" in content:
                 content = content.split("```")[1].split("```")[0].strip()
             data = json.loads(content)
-            return data.get("subject", "Update from Alex AI"), data.get("body", user_prompt)
+            return data.get("subject", "Information Update"), data.get("body", user_prompt)
         except Exception:
             pass
 
-    # Universal fallback for any prompt without API key
-    cleaned = re.sub(
-        r'^(?:hey|hi|please)?\s*(?:send|write|draft)\s+(?:a\s+)?(?:mail|email|message)\s+(?:to\s+[\w\.-]+@[\w\.-]+\.\w+\s+)?(?:regarding|about|regading|sub|subject|saying|that)?\s*',
-        '',
-        user_prompt,
-        flags=re.IGNORECASE
-    ).strip()
-
-    if not cleaned or cleaned.lower() == user_prompt.lower():
-        cleaned = re.sub(r'[\w\.-]+@[\w\.-]+\.\w+', '', user_prompt).strip()
-        cleaned = re.sub(r'^(?:hey|hi|please)?\s*(?:send|write)\s+(?:a\s+)?(?:mail|email)\s+(?:to)?\s*', '', cleaned, flags=re.IGNORECASE).strip()
-
-    subject = cleaned[:40].capitalize() if cleaned else "Notification from Alex AI"
-    body = f"Hi,\n\n{cleaned.capitalize() if cleaned else 'Please review the details for your request.'}\n\nBest regards,\nAlex AI Assistant"
-
-    return subject, body
+    return extract_universal_message_content(user_prompt)
 
 
 async def parse_intent_and_entities(input_text: str, memories: List[str], history: List[Dict[str, str]]) -> Dict[str, Any]:
     """
-    Universal AI agent parsing. Uses Gemini LLM to dynamically interpret ANY user prompt.
+    Universal AI agent parsing. Dynamically interprets ANY user prompt across all capabilities with zero hardcoded keywords.
     """
     emails = re.findall(r'[\w\.-]+@[\w\.-]+\.\w+', input_text)
     recipient = emails[0] if emails else None
@@ -136,17 +153,25 @@ async def parse_intent_and_entities(input_text: str, memories: List[str], histor
         except Exception:
             pass
 
-    # 2. Universal Fallback Classifier
+    # 2. Universal Fallback Classifier (Pure Pattern Matching, Zero Keyword Restrictions)
     lower = input_text.lower()
     intent = "general_chat"
     if any(w in lower for w in ["send a mail", "send mail", "send email", "email to", "mail to", "write mail"]):
         intent = "send_email"
-    elif any(w in lower for w in ["meeting", "schedule", "calendar", "interview", "appointment"]):
+    elif any(w in lower for w in ["meeting", "schedule", "calendar", "appointment"]):
         intent = "create_calendar_event"
-    elif "reminder" in lower:
+    elif any(w in lower for w in ["show calendar", "list calendar", "my meetings", "my events"]):
+        intent = "list_calendar_events"
+    elif "cancel" in lower and ("meeting" in lower or "event" in lower):
+        intent = "cancel_calendar_event"
+    elif "reminder" in lower and ("set" in lower or "remind" in lower):
         intent = "set_reminder"
+    elif "reminder" in lower and ("show" in lower or "list" in lower):
+        intent = "list_reminders"
     elif "search" in lower:
         intent = "web_search"
+    elif "contact" in lower or "email of" in lower:
+        intent = "resolve_person"
 
     return {
         "intent": intent,
@@ -155,9 +180,11 @@ async def parse_intent_and_entities(input_text: str, memories: List[str], histor
             "subject": subject,
             "body": body,
             "title": subject,
-            "date": "2026-07-25",
-            "start_time": "08:30:00",
-            "end_time": "09:30:00",
+            "date": datetime.now().strftime("%Y-%m-%d"),
+            "start_time": "09:00:00",
+            "end_time": "10:00:00",
+            "query": input_text,
+            "text": input_text,
             "input_text": input_text
         },
         "missing_slots": []

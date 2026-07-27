@@ -36,8 +36,9 @@ export default function RegisterPage() {
     setIsSubmitting(true);
     try {
       await register(name, email, password);
-    } catch (err: any) {
-      setError(err.message || "Failed to create account. Please try again.");
+    } catch (err) {
+      const error = err as Error;
+      setError(error.message || "Failed to create account. Please try again.");
     } finally {
       setIsSubmitting(false);
     }

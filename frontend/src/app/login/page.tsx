@@ -24,8 +24,9 @@ export default function LoginPage() {
     setIsSubmitting(true);
     try {
       await login(email, password);
-    } catch (err: any) {
-      setError(err.message || "Failed to sign in. Please check your credentials.");
+    } catch (err) {
+      const error = err as Error;
+      setError(error.message || "Failed to sign in. Please check your credentials.");
     } finally {
       setIsSubmitting(false);
     }
@@ -134,7 +135,7 @@ export default function LoginPage() {
 
           {/* Footer Link */}
           <div className="mt-8 text-center text-xs text-slate-400">
-            Don't have an account?{" "}
+            Don&apos;t have an account?{" "}
             <Link href="/register" className="font-semibold text-indigo-400 hover:text-indigo-300 transition-colors">
               Create account
             </Link>
