@@ -82,22 +82,20 @@ jobs:
         run: npm install -g vercel@latest
 
       - name: Deploy Frontend to Vercel
-        if: ${{ secrets.VERCEL_TOKEN != '' }}
         working-directory: ./frontend
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
-          vercel pull --yes --environment=production --token=$VERCEL_TOKEN
-          vercel build --prod --token=$VERCEL_TOKEN
-          vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN
-
-      - name: Check Vercel Secrets Configuration
-        if: ${{ secrets.VERCEL_TOKEN == '' }}
-        run: |
-          echo "===================================================================================================="
-          echo "⚠️ Vercel deployment step skipped because VERCEL_TOKEN secret is not set in GitHub Secrets."
-          echo "To enable automatic deployment, add VERCEL_TOKEN, VERCEL_ORG_ID, and VERCEL_PROJECT_ID to:"
-          echo "GitHub Repo -> Settings -> Secrets and variables -> Actions"
-          echo "===================================================================================================="
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "===================================================================================================="
+            echo "⚠️ Vercel deployment step skipped because VERCEL_TOKEN secret is not set in GitHub Secrets."
+            echo "To enable automatic deployment, add VERCEL_TOKEN, VERCEL_ORG_ID, and VERCEL_PROJECT_ID to:"
+            echo "GitHub Repo -> Settings -> Secrets and variables -> Actions"
+            echo "===================================================================================================="
+          else
+            vercel pull --yes --environment=production --token=$VERCEL_TOKEN
+            vercel build --prod --token=$VERCEL_TOKEN
+            vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN
+          fi
