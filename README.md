@@ -1,6 +1,5 @@
 # 💬 Alex — Enterprise Chat-Driven AI Assistant Agent Platform
 
-[![CI/CD Pipeline](https://github.com/mr-rajesh857/alex-voice-agent/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/mr-rajesh857/alex-voice-agent/actions/workflows/ci-cd.yml)
 [![Next.js](https://img.shields.io/badge/Next.js-16%20App%20Router-black?logo=next.js)](https://nextjs.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688?logo=fastapi)](https://fastapi.tiangolo.com/)
 [![LangGraph](https://img.shields.io/badge/LangGraph-Stateful%20Agent-blue)](https://python.langchain.com/)
@@ -8,7 +7,6 @@
 [![FastMCP](https://img.shields.io/badge/Protocol-FastMCP-purple)](https://modelcontextprotocol.io/)
 
 > **Architectural Specification & Production Engineering Guide**  
-> *Authored from an SDE-3 (Senior Staff Software Engineer) perspective for high-availability AI agent systems.*
 
 ---
 
@@ -18,7 +16,7 @@
 
 **Alex** is a production-grade, enterprise-ready chat-driven AI assistant platform designed to automate productivity workflows, schedule management, document search, and personal/enterprise communications.
 
-Built upon a **stateful agentic graph architecture (LangGraph)**, Alex bridges large language models (Google Gemini) with modular tools through the **Model Context Protocol (FastMCP)**. The system includes **Human-in-the-Loop (HITL) security gates** for high-risk action confirmation, persistent semantic vector memory via **PostgreSQL `pgvector`**, and an automated **GitHub Actions CI/CD pipeline** delivering continuous deployment to **Vercel**.
+Built upon a **stateful agentic graph architecture (LangGraph)**, Alex bridges large language models (Google Gemini) with modular tools through the **Model Context Protocol (FastMCP)**. The system includes **Human-in-the-Loop (HITL) security gates** for high-risk action confirmation, and persistent semantic vector memory via **PostgreSQL `pgvector`**.
 
 ---
 
@@ -102,42 +100,11 @@ Independent Model Context Protocol (MCP) microservices offering standardized too
 * **Database**: PostgreSQL 16 initialized with the `pgvector` extension ([infra/postgres/init.sql](file:///home/rajeshkumarpanda/Documents/Alex/infra/postgres/init.sql)).
 * **Semantic Embeddings**: `langchain-google-genai` vector embeddings stored in HNSW / IVFFlat indexes for real-time similarity search.
 
----
-
-## 🚀 CI/CD Pipeline & Automated Deployment
-
-The project implements a zero-downtime, fully automated CI/CD pipeline using **GitHub Actions** ([.github/workflows/ci-cd.yml](file:///home/rajeshkumarpanda/Documents/Alex/.github/workflows/ci-cd.yml)):
-
-```
-Push to master ──► [Backend CI: Pytest & Health Check] ──┐
-                 ──► [Frontend CI: ESLint & Next.js Build]  ──┼──► [Deploy to Vercel Stage (CD)]
-```
-
-### Continuous Integration (CI)
-1. **Backend CI**:
-   - Sets up Python 3.11 environment.
-   - Installs backend requirements (`backend/requirements.txt`).
-   - Executes unit & integration tests (`pytest backend/tests`) with automated database lifespan mocking ([backend/tests/conftest.py](file:///home/rajeshkumarpanda/Documents/Alex/backend/tests/conftest.py)).
-
-2. **Frontend CI**:
-   - Sets up Node.js 24 environment.
-   - Installs frontend packages (`npm install --legacy-peer-deps`).
-   - Performs code quality linting (`npm run lint`).
-   - Validates Next.js production build (`npm run build`).
-
-### Continuous Deployment (CD)
-* **Vercel Stage**: Automatically triggers production deployment of `/frontend` to **Vercel** upon successful completion of CI jobs when secret keys (`VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`) are configured.
-
----
 
 ## 📁 Repository Directory Layout
 
 ```
 alex-voice-agent/
-├── .github/
-│   └── workflows/
-│       └── ci-cd.yml                 # GitHub Actions CI/CD Pipeline Definition
-│
 ├── backend/                          # FastAPI Backend Gateway & LangGraph Agent
 │   ├── app/
 │   │   ├── core/                     # JWT security, password hashing, environment config
@@ -264,20 +231,7 @@ cd frontend && npm run build
 
 ---
 
-## 🌐 Production Vercel Deployment Setup
 
-To enable automated CD deployment to Vercel via GitHub Actions:
-
-1. Obtain your **Vercel Access Token** from [vercel.com/account/tokens](https://vercel.com/account/tokens).
-2. Obtain your **Project ID** and **Org ID** from Vercel Project Settings.
-3. Configure the following Repository Secrets in GitHub (**Settings ➔ Secrets and variables ➔ Actions**):
-   * `VERCEL_TOKEN`
-   * `VERCEL_ORG_ID`
-   * `VERCEL_PROJECT_ID`
-
-Once configured, pushing any commit to `master` will automatically build, test, and deploy your frontend application to Vercel.
-
----
 
 ## 🛡️ Security & Enterprise Compliance
 
