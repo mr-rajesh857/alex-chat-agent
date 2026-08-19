@@ -164,8 +164,11 @@ async def execute_mcp_tool(tool_name: str, tool_args: Dict[str, Any]) -> Dict[st
 
     # 2. GOOGLE CALENDAR API — Create Event
     elif tool_name == "create_calendar_event":
-        title = tool_args.get("title") or "Meeting"
+        from app.llm.client import sanitize_meeting_title
+
         recipient = tool_args.get("recipient") or tool_args.get("to")
+        raw_title = tool_args.get("title") or ""
+        title = sanitize_meeting_title(raw_title, recipient)
         date_val = tool_args.get("date", datetime.now().strftime("%Y-%m-%d"))
         start_time_val = tool_args.get("start_time", "09:00:00")
         end_time_val = tool_args.get("end_time", "10:00:00")
@@ -203,10 +206,25 @@ async def execute_mcp_tool(tool_name: str, tool_args: Dict[str, Any]) -> Dict[st
                     data = resp.json()
                     email_result = ""
                     if recipient:
+                        organizer_email = data.get("organizer", {}).get("email") or data.get("creator", {}).get("email") or "Organizer"
+                        invitation_body = (
+                            f"Hello,\n\n"
+                            f"You have been invited to a meeting scheduled via Alex AI Assistant.\n\n"
+                            f"📌 Meeting Details:\n"
+                            f"• Title: {title}\n"
+                            f"• Date: {date_val}\n"
+                            f"• Time: {start_time_val} - {end_time_val} IST\n"
+                            f"• Organizer (From): {organizer_email}\n"
+                            f"• Attendee (To): {recipient}\n"
+                            f"• Calendar Link: {data.get('htmlLink')}\n\n"
+                            f"Please click the Google Calendar link above to view the full details or accept the invitation.\n\n"
+                            f"Best regards,\n"
+                            f"Alex AI Assistant"
+                        )
                         email_res = await execute_mcp_tool("send_email", {
                             "recipient": recipient,
                             "subject": f"Meeting Invitation: {title}",
-                            "body": f"Hi,\n\nYour meeting '{title}' has been scheduled on Google Calendar for {date_val} ({start_time_val} - {end_time_val} IST).\n\nCalendar Link: {data.get('htmlLink')}\n\nBest regards,\nAlex AI Assistant"
+                            "body": invitation_body
                         })
                         email_result = f" & {email_res.get('message')}"
 

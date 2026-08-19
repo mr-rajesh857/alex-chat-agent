@@ -24,24 +24,25 @@ class ExtractedIntent(BaseModel):
 
 
 SYSTEM_INTENT_PROMPT = """
-You are Alex, an autonomous executive AI assistant agent capable of performing any task requested by your user.
+You are Alex, a globally capable autonomous executive AI assistant agent.
 Analyze the user's input and determine the exact intent/tool to execute, extracting all required arguments dynamically into `tool_args`.
 
 Supported Universal Capabilities & Tools:
-1. `send_email`: Send emails. Extract `recipient` (email), `subject` (concise subject line), and `body` (professionally composed message body).
-2. `create_calendar_event`: Schedule calendar meetings. Extract `title`, `recipient`, `date` (YYYY-MM-DD), `start_time` (HH:MM:SS), `end_time` (HH:MM:SS).
+1. `send_email`: Send direct emails without calendar scheduling. Extract `recipient` (email), `subject` (concise 3-6 word subject line), and `body` (professionally written, complete email message body). Use this ONLY when the user explicitly wants to send an email/mail.
+2. `create_calendar_event`: Schedule calendar meetings. Extract `title` (clean meeting title e.g. 'Project Review' or 'Meeting with <recipient>'), `recipient` (attendee email), `date` (YYYY-MM-DD format), `start_time` (24-hour HH:MM:SS format), `end_time` (24-hour HH:MM:SS format, 1 hour after start_time if unspecified). Use this when the user requests a meeting, schedule, calendar event, or appointment.
 3. `list_calendar_events`: View upcoming events. Extract `date` or `date_range`.
 4. `cancel_calendar_event`: Cancel a meeting. Extract `event_title_or_id`.
-5. `set_reminder`: Set reminders. Extract `reminder_text`, `time`.
+5. `set_reminder`: Set reminders or task alerts. Extract `reminder_text`, `time`.
 6. `list_reminders`: List active reminders. Extract `status`.
-7. `web_search`: Search the web for information. Extract `query`.
+7. `web_search`: Search the web for live/external information. Extract `query`.
 8. `resolve_person`: Search contact details. Extract `name`.
-9. `general_chat`: Answer general questions, write content, or converse naturally. Extract `text`.
+9. `general_chat`: Answer general questions, explain topics, draft text, or converse naturally. Extract `text`.
 
-CRITICAL INSTRUCTIONS:
-- For communication tasks (emails/calendar invites), write genuine, professional messages directly for the recipient based on the user's intent. Never copy raw meta-commands like 'hey send a mail' into the body.
-- Extract date/time parameters dynamically.
-- Support any language, topic, or work task requested by the user.
+CRITICAL RULES:
+- `send_email` vs `create_calendar_event`: If the request is ONLY to send a message/email to a person (no meeting date/time requested), classify as `send_email`. If the request mentions scheduling a meeting/calendar event, classify as `create_calendar_event`.
+- Convert informal date strings (e.g. '20-aug-2026', 'tomorrow', 'next Monday') into 'YYYY-MM-DD'.
+- Convert 12-hour times (e.g. '10.00 am', '3.30 pm') into 24-hour 'HH:MM:SS' format.
+- For email bodies, compose clear, polite, grammatically perfect messages directly for the recipient. Never copy raw user meta-commands into the body.
 """
 
 
@@ -79,9 +80,74 @@ def extract_universal_message_content(user_prompt: str) -> tuple[str, str]:
     return subject, body
 
 
+def parse_datetime_from_text(input_text: str) -> tuple[str, str, str]:
+    """Dynamically parses date, start_time, and end_time from raw input text using regex patterns."""
+    extracted_date = datetime.now().strftime("%Y-%m-%d")
+    extracted_start = "09:00:00"
+    extracted_end = "10:00:00"
+
+    # 1. Extract Date (e.g. 20-aug-2026, 20/08/2026, 2026-08-20, 20 aug 2026)
+    date_match = re.search(r'\b(\d{1,2})[-/\s]([a-zA-Z]{3,9}|\d{1,2})[-/\s](\d{4})\b', input_text)
+    if date_match:
+        day, month_str, year = date_match.groups()
+        try:
+            if month_str.isdigit():
+                dt = datetime(int(year), int(month_str), int(day))
+            else:
+                for fmt in ("%b", "%B"):
+                    try:
+                        dt = datetime.strptime(f"{day} {month_str} {year}", f"%d {fmt} %Y")
+                        break
+                    except ValueError:
+                        continue
+            extracted_date = dt.strftime("%Y-%m-%d")
+        except Exception:
+            pass
+
+    # 2. Extract Time (e.g. 10.00 am, 10:00am, 10 am, 10.00, 10:00, 15:30)
+    time_match = re.search(r'\b(\d{1,2})[\.:](\d{2})\s*(am|pm)?\b|\b(\d{1,2})\s*(am|pm)\b', input_text, re.IGNORECASE)
+    if time_match:
+        g1, g2, g3, g4, g5 = time_match.groups()
+        if g1:
+            hour = int(g1)
+            minute = int(g2)
+            meridiem = (g3 or "").lower()
+        else:
+            hour = int(g4)
+            minute = 0
+            meridiem = (g5 or "").lower()
+
+        if meridiem == "pm" and hour < 12:
+            hour += 12
+        elif meridiem == "am" and hour == 12:
+            hour = 0
+
+        extracted_start = f"{hour:02d}:{minute:02d}:00"
+        end_hour = (hour + 1) % 24
+        extracted_end = f"{end_hour:02d}:{minute:02d}:00"
+
+    return extracted_date, extracted_start, extracted_end
+
+
+def sanitize_meeting_title(raw_title: str, recipient: Optional[str] = None) -> str:
+    """Cleans up raw meeting titles by stripping command meta-phrases, email addresses, and date/time parameters."""
+    if not raw_title:
+        return f"Meeting with {recipient}" if recipient else "Scheduled Meeting"
+    
+    cleaned = re.sub(r'^(?:schedule|create|set|book)\s+(?:a\s+)?(?:meet|meeting|event|appointment)\s*(?:with|to)?\s*', '', raw_title, flags=re.IGNORECASE).strip()
+    cleaned = re.sub(r'[\w\.-]+@[\w\.-]+\.\w+', '', cleaned).strip()
+    cleaned = re.sub(r',?\s*at\s*\d{1,2}[\.:]\d{2}.*', '', cleaned, flags=re.IGNORECASE).strip()
+    cleaned = re.sub(r',?\s*date\s*.*', '', cleaned, flags=re.IGNORECASE).strip()
+    cleaned = cleaned.strip(', ').strip()
+
+    if not cleaned or len(cleaned) < 3:
+        return f"Meeting with {recipient}" if recipient else "Scheduled Meeting"
+    return cleaned.title()
+
+
 async def generate_email_content_with_ai(user_prompt: str) -> tuple[str, str]:
     """Uses Gemini AI or universal text sanitizer to generate dynamic subject and body for ANY prompt."""
-    if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY.startswith("AIzaSy"):
+    if settings.GEMINI_API_KEY and len(settings.GEMINI_API_KEY.strip()) > 5:
         try:
             llm = get_llm(temperature=0.3)
             prompt = f"""
@@ -123,9 +189,10 @@ async def parse_intent_and_entities(input_text: str, memories: List[str], histor
     recipient = emails[0] if emails else None
 
     subject, body = await generate_email_content_with_ai(input_text)
+    parsed_date, parsed_start, parsed_end = parse_datetime_from_text(input_text)
 
     # 1. Try Gemini LLM Structured Ingestion
-    if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY.startswith("AIzaSy"):
+    if settings.GEMINI_API_KEY and len(settings.GEMINI_API_KEY.strip()) > 5:
         try:
             llm = get_llm(temperature=0.1)
             structured_llm = llm.with_structured_output(ExtractedIntent)
@@ -144,6 +211,15 @@ async def parse_intent_and_entities(input_text: str, memories: List[str], histor
                 args["subject"] = subject
             if not args.get("body") or input_text in args.get("body", ""):
                 args["body"] = body
+            if not args.get("date"):
+                args["date"] = parsed_date
+            if not args.get("start_time"):
+                args["start_time"] = parsed_start
+            if not args.get("end_time"):
+                args["end_time"] = parsed_end
+
+            raw_title = args.get("title") or subject
+            args["title"] = sanitize_meeting_title(raw_title, recipient)
 
             return {
                 "intent": result.intent,
@@ -173,16 +249,18 @@ async def parse_intent_and_entities(input_text: str, memories: List[str], histor
     elif "contact" in lower or "email of" in lower:
         intent = "resolve_person"
 
+    clean_title = sanitize_meeting_title(subject, recipient)
+
     return {
         "intent": intent,
         "entities": {
             "recipient": recipient,
             "subject": subject,
             "body": body,
-            "title": subject,
-            "date": datetime.now().strftime("%Y-%m-%d"),
-            "start_time": "09:00:00",
-            "end_time": "10:00:00",
+            "title": clean_title,
+            "date": parsed_date,
+            "start_time": parsed_start,
+            "end_time": parsed_end,
             "query": input_text,
             "text": input_text,
             "input_text": input_text
@@ -207,10 +285,13 @@ async def generate_confirmation_message(tool_name: str, tool_args: Dict[str, Any
         subject = tool_args.get("subject") or "Notification"
         return f"Should I send an email to {recipient} with subject '{subject}' via Gmail API?"
     
-    title = tool_args.get("title") or "Meeting"
+    title_raw = tool_args.get("title") or ""
+    title = sanitize_meeting_title(title_raw, recipient)
     date = tool_args.get("date") or "scheduled date"
     start_time = tool_args.get("start_time", "")
-    return f"Should I schedule '{title}' with {recipient} on {date} ({start_time} IST) on Google Calendar and send an email invitation?"
+    end_time = tool_args.get("end_time", "")
+    time_str = f"({start_time} - {end_time} IST)" if start_time and end_time else f"({start_time} IST)"
+    return f"Should I schedule '{title}' with {recipient} on {date} {time_str} on Google Calendar and send an email invitation?"
 
 
 async def format_final_response(input_text: str, tool_result: Any) -> str:

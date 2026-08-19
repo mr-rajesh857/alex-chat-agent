@@ -2,8 +2,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.core.config import settings
+from app.core.logging_config import setup_logging
 from app.routers import auth, chat
 from app.db.session import engine, Base
+
+# Initialize file-based logging (logs redirected to backend/logs/app.log)
+setup_logging()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
