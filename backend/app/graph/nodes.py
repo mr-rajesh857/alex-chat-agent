@@ -33,6 +33,12 @@ async def parse_intent_node(state: AgentState) -> Dict[str, Any]:
     history = state.get("conversation", [])
     
     parsed = await parse_intent_and_entities(input_text, memories, history)
+    if not parsed or not isinstance(parsed, dict):
+        parsed = {
+            "intent": "general_chat",
+            "entities": {"input_text": input_text},
+            "missing_slots": []
+        }
     
     intent = parsed.get("intent", "general_chat")
     entities = parsed.get("entities", {})

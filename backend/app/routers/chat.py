@@ -78,48 +78,70 @@ async def send_chat_message(
         # Check if the previous turn was waiting for user confirmation
         if initial_state.get("pending_confirmation"):
             user_input_lower = payload.input_text.strip().lower()
-            is_confirmed = (
-                payload.confirmation_response is True or 
-                any(kw in user_input_lower for kw in ["yes", "yep", "sure", "ok", "confirm", "proceed", "proceeding"])
-            )
-            is_cancelled = (
-                payload.confirmation_response is False or
-                any(kw in user_input_lower for kw in ["no", "cancel", "stop", "reject"])
+            
+            # Check if this input is a new command rather than a confirmation response
+            is_new_command = (
+                payload.confirmation_response is None and
+                any(kw in user_input_lower for kw in ["schedule", "create", "send", "book", "remind", "list", "show", "cancel", "search", "mail", "email", "meeting"])
             )
 
-            if is_confirmed:
-                tool_name = initial_state.get("tool_name", "create_calendar_event")
-                tool_args = initial_state.get("tool_args", {})
-                
-                # Execute the real Google API tool directly!
-                tool_res = await execute_mcp_tool(tool_name, tool_args)
-                
-                response_text = tool_res.get("message", "✅ Action executed successfully!")
-                
-                final_state = {
-                    **initial_state,
-                    "pending_confirmation": False,
-                    "requires_confirmation": False,
-                    "confirmation_given": True,
-                    "tool_result": tool_res,
-                    "final_response": response_text
-                }
-            else:
-                response_text = "❌ Action cancelled by user. No changes were made."
-                final_state = {
-                    **initial_state,
-                    "pending_confirmation": False,
-                    "requires_confirmation": False,
-                    "confirmation_given": False,
-                    "final_response": response_text
-                }
+            if not is_new_command:
+                is_confirmed = (
+                    payload.confirmation_response is True or 
+                    user_input_lower in ["yes", "yep", "sure", "confirm", "proceed", "yes proceed", "yes confirm"]
+                )
+                is_cancelled = (
+                    payload.confirmation_response is False or
+                    user_input_lower in ["no", "cancel", "stop", "reject", "don't send", "do not send"]
+                )
 
-            # Save assistant turn & updated checkpoint
-            assistant_turn = ConversationTurn(
-                session_id=uuid.UUID(session_id),
-                role="assistant",
-                content=response_text
-            )
+                if is_confirmed:
+                    tool_name = initial_state.get("tool_name", "create_calendar_event")
+                    tool_args = initial_state.get("tool_args", {})
+                    
+                    tool_res = await execute_mcp_tool(tool_name, tool_args)
+                    response_text = tool_res.get("message", "✅ Action executed successfully!")
+                    
+                    final_state = {
+                        **initial_state,
+                        "pending_confirmation": False,
+                        "requires_confirmation": False,
+                        "confirmation_given": True,
+                        "tool_result": tool_res,
+                        "final_response": response_text
+                    }
+                elif is_cancelled:
+                    response_text = "❌ Action cancelled by user. No changes were made."
+                    final_state = {
+                        **initial_state,
+                        "pending_confirmation": False,
+                        "requires_confirmation": False,
+                        "confirmation_given": False,
+                        "final_response": response_text
+                    }
+                else:
+                    is_new_command = True
+
+            if not is_new_command:
+                # Save assistant turn & updated checkpoint
+                assistant_turn = ConversationTurn(
+                    session_id=uuid.UUID(session_id),
+                    role="assistant",
+                    content=response_text
+                )
+                db.add(assistant_turn)
+                checkpoint.state_json = final_state
+                await db.commit()
+
+                return ChatMessageResponse(
+                    session_id=session_id,
+                    response_text=response_text,
+                    intent=final_state.get("intent"),
+                    requires_confirmation=False,
+                    pending_confirmation=False,
+                    confirmation_payload=None,
+                    tool_result=final_state.get("tool_result"),
+                )
             db.add(assistant_turn)
             checkpoint.state_json = final_state
             await db.commit()

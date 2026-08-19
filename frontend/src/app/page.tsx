@@ -397,7 +397,7 @@ export default function ChatDashboardPage() {
                         ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20"
                         : "bg-slate-900 border border-slate-800 text-slate-200"
                     }`}>
-                      <p>{msg.text}</p>
+                      {renderFormattedMessage(msg.text)}
                     </div>
 
                     {/* Interactive Confirmation Card */}
@@ -486,4 +486,121 @@ export default function ChatDashboardPage() {
       </main>
     </div>
   );
+}
+
+function renderFormattedMessage(text: string) {
+  if (!text) return null;
+
+  const lines = text.split("\n");
+  const hasTable = lines.some((l) => l.trim().startsWith("|") && l.includes("|"));
+
+  if (hasTable) {
+    const nonTableBefore: string[] = [];
+    const tableLines: string[] = [];
+    const nonTableAfter: string[] = [];
+    let state: "before" | "in_table" | "after" = "before";
+
+    for (const line of lines) {
+      const isTableLine = line.trim().startsWith("|") && line.includes("|");
+      if (isTableLine) {
+        state = "in_table";
+        tableLines.push(line);
+      } else if (state === "before") {
+        nonTableBefore.push(line);
+      } else {
+        nonTableAfter.push(line);
+      }
+    }
+
+    const validTableRows = tableLines.filter(
+      (l) => !l.trim().match(/^\|(?:\s*:?-+:?\s*\|)+$/)
+    );
+
+    if (validTableRows.length > 0) {
+      const headerRow = validTableRows[0];
+      const bodyRows = validTableRows.slice(1);
+
+      const parseCells = (rowStr: string) =>
+        rowStr
+          .split("|")
+          .map((c) => c.trim())
+          .filter((c, idx, arr) => idx > 0 && idx < arr.length - 1);
+
+      const headers = parseCells(headerRow);
+
+      return (
+        <div className="space-y-4 w-full overflow-x-auto">
+          {nonTableBefore.length > 0 && (
+            <div className="whitespace-pre-wrap font-medium">{renderInlineFormatting(nonTableBefore.join("\n").trim())}</div>
+          )}
+
+          <div className="my-3 overflow-hidden rounded-xl border border-indigo-500/40 bg-slate-950/90 shadow-2xl backdrop-blur-md">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-indigo-600/30 text-indigo-200 border-b border-indigo-500/30 font-bold uppercase tracking-wider">
+                  {headers.map((h, i) => (
+                    <th key={i} className="px-4 py-3 border-r border-indigo-500/20 last:border-r-0">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800 text-slate-200">
+                {bodyRows.map((rowStr, rIdx) => {
+                  const cells = parseCells(rowStr);
+                  return (
+                    <tr
+                      key={rIdx}
+                      className="hover:bg-indigo-500/10 transition-colors odd:bg-slate-900/50 even:bg-slate-900/90"
+                    >
+                      {cells.map((cell, cIdx) => (
+                        <td key={cIdx} className="px-4 py-3 border-r border-slate-800 last:border-r-0 font-normal">
+                          {renderInlineFormatting(cell)}
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {nonTableAfter.length > 0 && (
+            <div className="whitespace-pre-wrap">{renderInlineFormatting(nonTableAfter.join("\n").trim())}</div>
+          )}
+        </div>
+      );
+    }
+  }
+
+  return (
+    <div className="whitespace-pre-wrap leading-relaxed space-y-1">
+      {renderInlineFormatting(text)}
+    </div>
+  );
+}
+
+function renderInlineFormatting(str: string) {
+  if (!str) return null;
+
+  const parts = str.split(/(\[[^\]]+\]\([^)]+\))/g);
+
+  return parts.map((part, i) => {
+    const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+    if (linkMatch) {
+      const [, label, url] = linkMatch;
+      return (
+        <a
+          key={i}
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-indigo-400 underline font-semibold hover:text-indigo-300 transition-colors"
+        >
+          {label}
+        </a>
+      );
+    }
+    return <span key={i}>{part}</span>;
+  });
 }

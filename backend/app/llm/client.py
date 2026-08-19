@@ -54,6 +54,19 @@ def get_llm(temperature: float = 0.2):
     )
 
 
+def sanitize_email_subject(raw_subject: str) -> str:
+    """Strips command meta-phrases and email addresses to produce clean 3-6 word subject lines."""
+    if not raw_subject:
+        return "Information Update"
+    cleaned = re.sub(r'^(?:hey|hi|please)?\s*(?:send|write|draft|dispatch)\s+(?:a\s+)?(?:mail|email|message)\s+(?:to)?\s*[\w\.-]+@[\w\.-]+\.\w+\s*(?:regarding|about|regading|sub|subject|saying|that|for)?\s*', '', raw_subject, flags=re.IGNORECASE).strip()
+    cleaned = re.sub(r'^(?:send|write|draft)\s+(?:a\s+)?(?:mail|email|message)\s*(?:regarding|about|to)?\s*', '', cleaned, flags=re.IGNORECASE).strip()
+    cleaned = re.sub(r'[\w\.-]+@[\w\.-]+\.\w+', '', cleaned).strip()
+    cleaned = cleaned.strip(', ').strip()
+    if not cleaned or len(cleaned) < 3:
+        return "Information Update"
+    return cleaned[:50].title()
+
+
 def extract_universal_message_content(user_prompt: str) -> tuple[str, str]:
     """
     100% Universal text sanitizer. Strips command prefixes dynamically without any hardcoded topic keywords.
@@ -69,13 +82,11 @@ def extract_universal_message_content(user_prompt: str) -> tuple[str, str]:
     # 2. General cleanup of email addresses and action prefixes
     if not cleaned or cleaned.lower() == user_prompt.lower():
         cleaned = re.sub(r'[\w\.-]+@[\w\.-]+\.\w+', '', user_prompt).strip()
-        cleaned = re.sub(r'^(?:hey|hi|please)?\s*(?:send|write|draft|schedule|create)\s+(?:a\s+)?(?:mail|email|message|meeting)\s*(?:to|with)?\s*', '', cleaned, flags=re.IGNORECASE).strip()
+        cleaned = re.sub(r'^(?:hey|hi|please)?\s*(?:send|write|draft|schedule|create)\s+(?:a\s+)?(?:mail|email|message|meeting)\s*(?:to)?\s*', '', cleaned, flags=re.IGNORECASE).strip()
 
-    # 3. Dynamic Subject generation from extracted content
-    subject = cleaned[:45].capitalize() if cleaned else "Notification from Alex AI"
-
-    # 4. Dynamic Body generation from extracted content
-    body = f"Hi,\n\n{cleaned.capitalize() if cleaned else 'Please review the requested details.'}\n\nBest regards,\nAlex AI Assistant"
+    subject = sanitize_email_subject(cleaned if cleaned else user_prompt)
+    body_text = cleaned.capitalize() if cleaned and cleaned.lower() != user_prompt.lower() else "Please review the requested updates."
+    body = f"Hello,\n\nI am writing to share the following details:\n\n{body_text}\n\nPlease let me know if you have any questions.\n\nBest regards,\nAlex AI Assistant"
 
     return subject, body
 
@@ -140,7 +151,7 @@ def sanitize_meeting_title(raw_title: str, recipient: Optional[str] = None) -> s
     cleaned = re.sub(r',?\s*date\s*.*', '', cleaned, flags=re.IGNORECASE).strip()
     cleaned = cleaned.strip(', ').strip()
 
-    if not cleaned or len(cleaned) < 3:
+    if not cleaned or len(cleaned) < 3 or cleaned.lower() in ["meeting", "meeting with", "meet", "meet with"]:
         return f"Meeting with {recipient}" if recipient else "Scheduled Meeting"
     return cleaned.title()
 
@@ -151,15 +162,19 @@ async def generate_email_content_with_ai(user_prompt: str) -> tuple[str, str]:
         try:
             llm = get_llm(temperature=0.3)
             prompt = f"""
-You are Alex, an executive AI assistant. Compose a professional email to the recipient based on the user's request.
+You are Alex, an executive AI assistant. Compose a complete, professional, grammatically perfect email message based on the user request below.
+
 User Request: "{user_prompt}"
 
 Instructions:
-1. `subject`: Create a concise, professional subject line (3-6 words).
-2. `body`: Write a polite, complete email body addressing the recipient directly. 
-   Do NOT copy user meta commands like "hey send a mail" or "schedule a meet". Write a clear email message (e.g. "Hi,\\n\\n[Message...]\\n\\nBest regards,\\nAlex AI Assistant").
+1. `subject`: Create a clean, concise, professional subject line (3-6 words, e.g. "Project Architecture Updates"). NEVER include meta-phrases like "send an email to" or email addresses in the subject!
+2. `body`: Write a complete, polite, professional email body addressing the recipient directly.
+   - Start with "Hello," or a polite greeting.
+   - Write clear, grammatically correct sentences explaining the topic.
+   - NEVER copy user meta-commands like "send an email to" or "tell him that" into the body!
+   - End with "Best regards,\\nAlex AI Assistant".
 
-Return JSON:
+Return JSON only:
 ```json
 {{
   "subject": "...",
@@ -174,11 +189,32 @@ Return JSON:
             elif "```" in content:
                 content = content.split("```")[1].split("```")[0].strip()
             data = json.loads(content)
-            return data.get("subject", "Information Update"), data.get("body", user_prompt)
+            
+            subj = sanitize_email_subject(data.get("subject", ""))
+            body = data.get("body", "")
+            if not body or input_text_in_body(user_prompt, body):
+                _, body = extract_universal_message_content(user_prompt)
+            return subj, body
         except Exception:
             pass
 
     return extract_universal_message_content(user_prompt)
+
+
+def input_text_in_body(user_prompt: str, body: str) -> bool:
+    """Checks if raw user prompt command words were copied verbatim into the body."""
+    low_body = body.lower()
+    return "send an email" in low_body or "send email" in low_body or user_prompt.lower() in low_body
+
+
+def extract_reminder_details(input_text: str) -> tuple[str, str]:
+    """Extracts clean reminder title and formatted execution time from user prompt."""
+    cleaned = re.sub(r'^(?:remind\s+me\s+to|remind\s+me|set\s+(?:a\s+)?reminder\s+(?:to|for)?)\s*', '', input_text, flags=re.IGNORECASE).strip()
+    cleaned = re.sub(r',?\s*(?:today|tomorrow|\d{1,2}[-/\s]\w+[-/\s]\d{4})?\s*at\s*\d{1,2}(?:[\.:]\d{2})?\s*(?:am|pm)?.*', '', cleaned, flags=re.IGNORECASE).strip()
+    
+    date_val, start_time_val, _ = parse_datetime_from_text(input_text)
+    time_display = f"{start_time_val} IST on {date_val}"
+    return (cleaned if cleaned else "Reminder Task"), time_display
 
 
 async def parse_intent_and_entities(input_text: str, memories: List[str], history: List[Dict[str, str]]) -> Dict[str, Any]:
@@ -207,10 +243,12 @@ async def parse_intent_and_entities(input_text: str, memories: List[str], histor
 
             if recipient and not args.get("recipient"):
                 args["recipient"] = recipient
-            if not args.get("subject") or "notification" in args.get("subject", "").lower():
-                args["subject"] = subject
-            if not args.get("body") or input_text in args.get("body", ""):
+
+            args["subject"] = sanitize_email_subject(args.get("subject") or subject)
+
+            if not args.get("body") or input_text_in_body(input_text, args.get("body", "")):
                 args["body"] = body
+
             if not args.get("date"):
                 args["date"] = parsed_date
             if not args.get("start_time"):
@@ -218,7 +256,7 @@ async def parse_intent_and_entities(input_text: str, memories: List[str], histor
             if not args.get("end_time"):
                 args["end_time"] = parsed_end
 
-            raw_title = args.get("title") or subject
+            raw_title = args.get("title") or args["subject"]
             args["title"] = sanitize_meeting_title(raw_title, recipient)
 
             return {
@@ -229,21 +267,21 @@ async def parse_intent_and_entities(input_text: str, memories: List[str], histor
         except Exception:
             pass
 
-    # 2. Universal Fallback Classifier (Pure Pattern Matching, Zero Keyword Restrictions)
+    # 2. Universal Fallback Classifier (Pure Pattern Matching)
     lower = input_text.lower()
     intent = "general_chat"
     if any(w in lower for w in ["send a mail", "send mail", "send email", "email to", "mail to", "write mail"]):
         intent = "send_email"
-    elif any(w in lower for w in ["meeting", "schedule", "calendar", "appointment"]):
-        intent = "create_calendar_event"
-    elif any(w in lower for w in ["show calendar", "list calendar", "my meetings", "my events"]):
-        intent = "list_calendar_events"
     elif "cancel" in lower and ("meeting" in lower or "event" in lower):
         intent = "cancel_calendar_event"
-    elif "reminder" in lower and ("set" in lower or "remind" in lower):
-        intent = "set_reminder"
-    elif "reminder" in lower and ("show" in lower or "list" in lower):
+    elif any(w in lower for w in ["show calendar", "list calendar", "my meetings", "show my meetings", "list meetings", "view meetings", "my events", "show events", "list events"]):
+        intent = "list_calendar_events"
+    elif any(w in lower for w in ["schedule", "create meeting", "book meeting", "meeting with", "appointment", "set up meeting"]):
+        intent = "create_calendar_event"
+    elif any(w in lower for w in ["show reminders", "list reminders", "my reminders", "view reminders", "active reminders"]):
         intent = "list_reminders"
+    elif any(w in lower for w in ["remind me", "set reminder", "create reminder", "add reminder"]):
+        intent = "set_reminder"
     elif "search" in lower:
         intent = "web_search"
     elif "contact" in lower or "email of" in lower:
